@@ -1,3 +1,6 @@
+## Needed Programs
+Npm, Cargo, clang 3.5 or above, llvm
+
 ## How to install
 
 ```sh
@@ -17,6 +20,10 @@ npm start
 # Builds the project and places it into the `dist` folder.
 npm run build
 ```
+
+## Environment Variables
+
+TARGET_CC=clang;TARGET_AR=llvm-ar
 
 ## How to run unit tests
 
