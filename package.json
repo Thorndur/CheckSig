@@ -3,8 +3,9 @@
   "name": "rust-webpack-template",
   "version": "0.1.0",
   "scripts": {
-    "build": "rimraf dist pkg && webpack",
-    "start": "rimraf dist pkg && webpack-dev-server --open -d",
+    "build": "rimraf dist pkg && webpack --features=wasm32_c",
+    "start22": "rimraf dist pkg && webpack-dev-server --verbose --open -d  --features=wasm32_c",
+    "start": "rimraf dist pkg && webpack-dev-server --verbose --open -d  --features=wasm32_c",
     "test": "cargo test && wasm-pack test --headless"
   },
   "devDependencies": {

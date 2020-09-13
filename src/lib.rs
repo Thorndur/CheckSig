@@ -1,9 +1,9 @@
 mod pdf_signature;
 
 use wasm_bindgen::prelude::*;
-use js_sys::ArrayBuffer;
-//use sha3::{Sha3_256, Digest};
+use js_sys::{ArrayBuffer};
 use ring::digest::{Context, SHA256};
+use ring::{signature};
 use wasm_bindgen::__rt::std::io::{Error, Cursor, Read};
 
 
@@ -11,9 +11,12 @@ use wasm_bindgen::__rt::std::io::{Error, Cursor, Read};
 // allocator.
 //
 // If you don't want to use `wee_alloc`, you can safely delete this.
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+// #[cfg(feature = "wee_alloc")]
+// #[global_allocator]
+// static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+
+static mut GLOBAL_MESSAGE: Vec<u8> = Vec::new();
 
 #[wasm_bindgen]
 extern "C" {
@@ -22,11 +25,12 @@ extern "C" {
     // `log(..)`
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
-
-    #[wasm_bindgen(module = "/siglib.js")]
-    fn getSignatureParts(signedDataString: Vec<u8>) -> ArrayBuffer;
 }
 
+#[wasm_bindgen(module = "/sigLib.js")]
+extern "C" {
+    fn getSignatureParts(signedDataString: Vec<u8>) -> ArrayBuffer;
+}
 
 
 // This is like the `main` function, except for JavaScript.
@@ -40,96 +44,32 @@ pub fn main_js() -> Result<(), JsValue> {
     Ok(())
 }
 
-// #[wasm_bindgen]
-// pub fn getSigString(array_buffer: ArrayBuffer) -> String {
-//     let typebuf: js_sys::Uint8Array = js_sys::Uint8Array::new(&array_buffer);
-//     let mut body:Vec<u8> = vec![0; typebuf.length() as usize];
-//     typebuf.copy_to(&mut body[..]);
-//
-//     let buffer: Vec<u8> = body;
-//     let versions = split_pdf_versions(buffer);
-//
-//     for version in &versions {
-//         log(String::from_utf8_lossy(version.as_slice()).to_string().as_str());
-//     }
-//
-//     let certificate_version = &mut versions.get(1).unwrap().to_vec().clone();
-//
-//     extract_signature_string(certificate_version).unwrap()
-// }
-//
-// #[wasm_bindgen]
-// pub fn getSigHash(array_buffer: ArrayBuffer) -> String {
-//     let typebuf: js_sys::Uint8Array = js_sys::Uint8Array::new(&array_buffer);
-//     let mut body:Vec<u8> = vec![0; typebuf.length() as usize];
-//     typebuf.copy_to(&mut body[..]);
-//
-//     let buffer: Vec<u8> = body;
-//     let versions = split_pdf_versions(buffer);
-//
-//     for version in &versions {
-//         log(String::from_utf8_lossy(version.as_slice()).to_string().as_str());
-//     }
-//
-//
-//     hex::encode(sha256_digest(&versions.get(0).unwrap().to_vec()).unwrap())
-//
-// }
-
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct SignatureAndHash {
     signature: Vec<u8>,
     hash: Vec<u8>
 }
 
 #[wasm_bindgen]
-pub fn get_signature_and_hash_from_file(array_buffer: ArrayBuffer) -> SignatureAndHash {
-    let typebuf: js_sys::Uint8Array = js_sys::Uint8Array::new(&array_buffer);
-    let mut body: Vec<u8> = vec![0; typebuf.length() as usize];
-    typebuf.copy_to(&mut body[..]);
+pub fn get_signature_from_file(array_buffer: ArrayBuffer) -> Vec<u8> {
     //getSignatureParts(body.clone());
+    //getSignatureParts(body.clone());
+    let signature_and_hash = extract_signature_and_hash(get_vec_from_array_buffer(array_buffer));
+    unsafe {
+        GLOBAL_MESSAGE = signature_and_hash.hash;
+    }
 
-    extract_signature_and_hash(body)
+    signature_and_hash.signature
 }
 
-// #[wasm_bindgen]
-// pub fn check_file(array_buffer: ArrayBuffer) -> String {
-//
-//     let typebuf: js_sys::Uint8Array = js_sys::Uint8Array::new(&array_buffer);
-//     let mut body:Vec<u8> = vec![0; typebuf.length() as usize];
-//     typebuf.copy_to(&mut body[..]);
-//
-//     let buffer: Vec<u8> = body;
-//     let versions = split_pdf_versions(buffer);
-//
-//     for version in &versions {
-//         log(String::from_utf8_lossy(version.as_slice()).to_string().as_str());
-//     }
-//
-//     let certificate_version = &mut versions.get(1).unwrap().to_vec().clone();
-//
-//     let signature  = extract_signature(certificate_version).unwrap();
-//
-//     /*if verify_signature(&signature.0, &signature.1, versions.get(0).unwrap()) {
-//         "Verified".to_string()
-//     } else {
-//         "False Signature".to_string()
-//     }*/
-//
-//     hex::encode(signature.1)
-//     //hex::encode(hash(&buffer).as_slice())
-// }
+fn get_vec_from_array_buffer(array_buffer: ArrayBuffer) -> Vec<u8> {
+    let typebuf: js_sys::Uint8Array = js_sys::Uint8Array::new(&array_buffer);
+    let mut buffer: Vec<u8> = vec![0; typebuf.length() as usize];
+    typebuf.copy_to(&mut buffer[..]);
 
-// fn split_pdf_versions(buffer: Vec<u8>) -> Vec<Vec<u8>> {
-//     let separator = "%%EOF";
-//
-//     let mut positions: Vec<usize> = buffer.windows(separator.len()).positions(|window| window == separator.as_bytes()).collect();
-//     positions.pop();
-//
-//     positions = positions.iter().map(|position| position + separator.len()).collect();
-//
-//     split_vec_at_positions(buffer, positions)
-// }
+    buffer
+}
 
 fn split_vec_at_positions<T>(vector: Vec<T>, positions: Vec<usize>) -> Vec<Vec<T>> {
     use std::collections::VecDeque;
@@ -151,61 +91,6 @@ fn split_vec_at_positions<T>(vector: Vec<T>, positions: Vec<usize>) -> Vec<Vec<T
 
     new_vector
 }
-//
-// fn verify_signature(x509: &X509Certificate, signature_bytes: &Vec<u8>, message: &Vec<u8>) -> bool {
-//     let peer_public_key =
-//         signature::UnparsedPublicKey::new(&signature::ED25519, x509.signature_value.data);
-//     peer_public_key.verify(message, signature_bytes).is_ok()
-//
-// }
-//
-// fn extract_signature_string(version: &mut Vec<u8>) -> Option<String> {
-//     if !(version.windows(10).any(|window| window == "/Type /Sig".as_bytes())) {
-//         None
-//     } else {
-//
-//         let certificate_as_byte_vec: Vec<u8> = extract_certificate_bytes_from_pdf_version(version);
-//
-//         log(hex::encode(&certificate_as_byte_vec.as_slice()).as_str());
-//
-//         Some(hex::encode(&certificate_as_byte_vec.as_slice()))
-//     }
-//
-// }
-//
-// fn extract_certificate<'a>(version: &'a mut Vec<u8>) -> Option<(X509Certificate<'a>, Vec<u8>)>{
-//     if !(version.windows(10).any(|window| window == "/Type /Sig".as_bytes())) {
-//         None
-//     } else {
-//
-//         let certificate_as_byte_vec: Vec<u8> = extract_certificate_bytes_from_pdf_version(version);
-//
-//
-//         log(hex::encode(&certificate_as_byte_vec.as_slice()).as_str());
-//
-//         let signature: pdf_signature::PDFSignature = from_bytes(&certificate_as_byte_vec.as_slice()).unwrap();
-//
-//         let signed_data_option: Option<ApplicationTag0<SignedData>> = signature.clone().signed_data;
-//
-//         let x509_certificate: Option<ApplicationTag0<Asn1RawDer>> = signed_data_option.clone().unwrap().0.certificates.0;
-//
-//         let x509_der: &'a mut  Vec<u8> = version;
-//
-//         x509_der.clone_from(&(x509_certificate.unwrap().0).0);
-//         //(x509_certificate.unwrap().0).0.clone_into(x509_der);
-//
-//         let x509: X509Certificate<'a> = parse_x509_der(x509_der).unwrap().1;
-//
-// //        log(hex::encode(signature.signed_data.unwrap().0.signer_infos.0.get(0).unwrap().clone().signed_attrs.).as_str());
-//
-//         // Some((
-//         //     x509,
-//         //     signature.signed_data.unwrap().0.signer_infos.0.get(0).unwrap().clone().signature
-//         // ))
-//
-//         None
-//     }
-// }
 
 fn extract_signature_and_hash(document: Vec<u8>) -> SignatureAndHash {
     let start_separator = b"/ETSI.CAdES.detached\n/Contents <";
@@ -219,36 +104,56 @@ fn extract_signature_and_hash(document: Vec<u8>) -> SignatureAndHash {
 
     let document_parts = split_vec_at_positions(document.to_vec(), vec![start_position, end_position]);
 
-
-    let signature = document_parts[1].clone();
+    log(String::from_utf8_lossy(&document_parts[1].clone().as_slice()[38..]).as_ref());
+    let signature = hex::decode(
+        String::from_utf8_lossy(
+            &document_parts[1].clone().as_slice()[38..]
+        ).as_bytes()
+    ).unwrap();
 
     let mut document_without_signature = document_parts[0].clone();
 
     document_without_signature.extend(document_parts[2].clone());
 
-    let hash = sha256_digest(&document_without_signature).unwrap();
+    log(hex::encode(document_without_signature.clone()).as_str());
 
 
     SignatureAndHash {
         signature,
-        hash
+        hash: document_without_signature
     }
 }
 
+#[wasm_bindgen]
+pub fn check_signature(signature_buffer: ArrayBuffer, public_key_buffer: ArrayBuffer) {
 
-// fn extract_certificate_bytes_from_pdf_version(version: &mut Vec<u8>) -> Vec<u8> {
+    //Verify the signature
+    let public_key =
+        signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_ASN1,
+                                         get_vec_from_array_buffer(public_key_buffer));
+
+    unsafe {
+        public_key.verify(GLOBAL_MESSAGE.clone().as_slice(), get_vec_from_array_buffer(signature_buffer).as_slice()).unwrap();
+    }
+//    unsafe {
+//        let secp = Secp256k1::new();
+//
+//        log(hex::encode(globalHash.clone().as_slice()).as_str());
+//
+//        let message = secp256k1::Message::from_slice(globalHash.clone().as_slice()).unwrap();
 //
 //
-//     let version_to_string = String::from_utf8_lossy(version.as_slice()).to_string();
+//        log(hex::encode(get_vec_from_array_buffer(signature_buffer.clone()).as_slice()).as_str());
+//        let signature = secp256k1::Signature::from_der(&get_vec_from_array_buffer(signature_buffer).as_slice()).unwrap();
 //
-//     let regex = Regex::new("<[0-9A-Fa-f]*>").unwrap();
-//     let certificate_as_hex_str = regex.find(version_to_string.as_str()).unwrap().as_str();
+//        log(hex::encode(get_vec_from_array_buffer(public_key_buffer.clone())).as_str());
+//        log(get_vec_from_array_buffer(public_key_buffer.clone()).len().to_string().as_str());
 //
-//     let certificate_as_hex_str = certificate_as_hex_str.replace("<", "");
-//     let certificate_as_hex_str = certificate_as_hex_str.replace(">", "");
+//        let public_key = secp256k1::PublicKey::from_slice(&get_vec_from_array_buffer(public_key_buffer)).unwrap();
 //
-//     hex::decode(certificate_as_hex_str).unwrap()
-// }
+//        secp.verify(&message, &signature, &public_key);
+//    }
+}
 
 fn sha256_digest(vector: &Vec<u8>) -> Result<Vec<u8>, Error> {
     let mut context = Context::new(&SHA256);
