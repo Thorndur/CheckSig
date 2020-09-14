@@ -1,5 +1,3 @@
-mod pdf_signature;
-
 use wasm_bindgen::prelude::*;
 use js_sys::{ArrayBuffer};
 use ring::digest::{Context, SHA256};
@@ -20,16 +18,10 @@ static mut GLOBAL_MESSAGE: Vec<u8> = Vec::new();
 
 #[wasm_bindgen]
 extern "C" {
-
     // Use `js_namespace` here to bind `console.log(..)` instead of just
     // `log(..)`
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
-}
-
-#[wasm_bindgen(module = "/sigLib.js")]
-extern "C" {
-    fn getSignatureParts(signedDataString: Vec<u8>) -> ArrayBuffer;
 }
 
 
@@ -46,18 +38,16 @@ pub fn main_js() -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 #[derive(Clone)]
-pub struct SignatureAndHash {
+pub struct SignatureAndMessage {
     signature: Vec<u8>,
-    hash: Vec<u8>
+    message: Vec<u8>
 }
 
 #[wasm_bindgen]
 pub fn get_signature_from_file(array_buffer: ArrayBuffer) -> Vec<u8> {
-    //getSignatureParts(body.clone());
-    //getSignatureParts(body.clone());
-    let signature_and_hash = extract_signature_and_hash(get_vec_from_array_buffer(array_buffer));
+    let signature_and_hash = extract_signature_and_message(get_vec_from_array_buffer(array_buffer));
     unsafe {
-        GLOBAL_MESSAGE = signature_and_hash.hash;
+        GLOBAL_MESSAGE = signature_and_hash.message;
     }
 
     signature_and_hash.signature
@@ -71,54 +61,32 @@ fn get_vec_from_array_buffer(array_buffer: ArrayBuffer) -> Vec<u8> {
     buffer
 }
 
-fn split_vec_at_positions<T>(vector: Vec<T>, positions: Vec<usize>) -> Vec<Vec<T>> {
-    use std::collections::VecDeque;
-
-    let mut vector_deque: VecDeque<T> = vector.into(); // avoids reallocating when possible
-
-    let mut new_vector: Vec<Vec<T>> = Vec::new();
-
-    let mut old_position: usize = 0;
-
-    for position in positions {
-        new_vector.push(vector_deque.drain(0..(position - old_position)).collect());
-        vector_deque.shrink_to_fit();
-
-        old_position = position;
-    }
-
-    new_vector.push(vector_deque.into());
-
-    new_vector
-}
-
-fn extract_signature_and_hash(document: Vec<u8>) -> SignatureAndHash {
+fn extract_signature_and_message(mut document: Vec<u8>) -> SignatureAndMessage {
     let start_separator = b"/ETSI.CAdES.detached\n/Contents <";
     let start_position = document.windows(start_separator.len()).position(|window| window == start_separator).unwrap() + start_separator.len();
 
     let end_separator = b">";
-    let end_position = document.split_at(start_position).1.windows(end_separator.len()).position(|window| window == end_separator).unwrap() + start_position;
+    let end_position = document.split_at(start_position).1
+        .windows(end_separator.len())
+        .position(|window| window == end_separator)
+        .unwrap() + start_position;
 
+    let signature_size = (start_position..end_position).count();
 
-    log(String::from_utf8_lossy(&document[end_position..]).to_string().as_str());
+    // first 38 bytes are taken out to remove PAdES wrapper of CMS
+    let mut signature_bytes = vec![0; signature_size-38];
 
-    let document_parts = split_vec_at_positions(document.to_vec(), vec![start_position, end_position]);
+    signature_bytes.clone_from_slice(&document.drain(start_position..end_position).as_slice()[38..]);
 
-    log(String::from_utf8_lossy(&document_parts[1].clone().as_slice()[38..]).as_ref());
     let signature = hex::decode(
         String::from_utf8_lossy(
-            &document_parts[1].clone().as_slice()[38..]
+            signature_bytes.as_slice()
         ).as_bytes()
     ).unwrap();
 
-    let mut document_without_signature = document_parts[0].clone();
+    //document.as_mut_slice()[start_position..end_position].clone_from_slice(vec!['0' as u8; signature_size].as_mut_slice());
 
-    document_without_signature.extend(document_parts[2].clone());
-
-    log(hex::encode(document_without_signature.clone()).as_str());
-
-
-    SignatureAndHash {
+    SignatureAndMessage {
         signature,
         hash: document_without_signature
     }

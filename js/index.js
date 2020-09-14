@@ -28,8 +28,6 @@ import("../pkg").then(module =>{
 
 
 
-
-
             //console.log(signedHash);
 
             let publicKey = SigObject.certificates[0].subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHex;
