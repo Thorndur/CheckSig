@@ -21,7 +21,7 @@ extern "C" {
     // Use `js_namespace` here to bind `console.log(..)` instead of just
     // `log(..)`
     #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
+    fn log(s: String);
 }
 
 
@@ -37,20 +37,15 @@ pub fn main_js() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-#[derive(Clone)]
-pub struct SignatureAndMessage {
-    signature: Vec<u8>,
-    message: Vec<u8>
-}
-
-#[wasm_bindgen]
 pub fn get_signature_from_file(array_buffer: ArrayBuffer) -> Vec<u8> {
-    let signature_and_hash = extract_signature_and_message(get_vec_from_array_buffer(array_buffer));
+    let (signature, message) =
+        extract_signature_and_message(get_vec_from_array_buffer(array_buffer));
+
     unsafe {
-        GLOBAL_MESSAGE = signature_and_hash.message;
+        GLOBAL_MESSAGE = message;
     }
 
-    signature_and_hash.signature
+    signature
 }
 
 fn get_vec_from_array_buffer(array_buffer: ArrayBuffer) -> Vec<u8> {
@@ -61,9 +56,12 @@ fn get_vec_from_array_buffer(array_buffer: ArrayBuffer) -> Vec<u8> {
     buffer
 }
 
-fn extract_signature_and_message(mut document: Vec<u8>) -> SignatureAndMessage {
-    let start_separator = b"/ETSI.CAdES.detached\n/Contents <";
-    let start_position = document.windows(start_separator.len()).position(|window| window == start_separator).unwrap() + start_separator.len();
+fn extract_signature_and_message(mut document: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+    let start_separator = b"/Contents <";
+    let start_position = document
+        .windows(start_separator.len())
+        .position(|window| window == start_separator)
+        .unwrap() + start_separator.len();
 
     let end_separator = b">";
     let end_position = document.split_at(start_position).1
@@ -71,12 +69,28 @@ fn extract_signature_and_message(mut document: Vec<u8>) -> SignatureAndMessage {
         .position(|window| window == end_separator)
         .unwrap() + start_position;
 
-    let signature_size = (start_position..end_position).count();
+    let byte_range_start_separator = b"/ByteRange [";
+    let byte_range_start = document.split_at(end_position).1
+        .windows(byte_range_start_separator.len())
+        .position(|window| window == byte_range_start_separator)
+        .unwrap() + end_position + byte_range_start_separator.len();
 
-    // first 38 bytes are taken out to remove PAdES wrapper of CMS
-    let mut signature_bytes = vec![0; signature_size-38];
+    let byte_range_end_separator = b"]";
+    let byte_range_end = document.split_at(byte_range_start).1
+        .windows(byte_range_end_separator.len())
+        .position(|window| window == byte_range_end_separator)
+        .unwrap() + byte_range_start;
 
-    signature_bytes.clone_from_slice(&document.drain(start_position..end_position).as_slice()[38..]);
+    let message = parse_byte_range(&document.as_slice()[byte_range_start..byte_range_end])
+        .iter()
+        .map(|range| document.as_slice()[range.0..range.1].to_vec())
+        .concat();
+
+
+    // first 38 bytes are removed to ignore PAdES wrapper of CMS
+
+    let signature_bytes = document.as_slice()[start_position+38..end_position].to_vec().clone();
+
 
     let signature = hex::decode(
         String::from_utf8_lossy(
@@ -84,7 +98,6 @@ fn extract_signature_and_message(mut document: Vec<u8>) -> SignatureAndMessage {
         ).as_bytes()
     ).unwrap();
 
-    //document.as_mut_slice()[start_position..end_position].clone_from_slice(vec!['0' as u8; signature_size].as_mut_slice());
 
     SignatureAndMessage {
         signature,
@@ -138,4 +151,19 @@ fn sha256_digest(vector: &Vec<u8>) -> Result<Vec<u8>, Error> {
     }
 
     Ok(context.finish().as_ref().to_vec())
+}
+
+fn sha256_digest<R: Read>(mut reader: R) -> Result<Digest, Error> {
+    let mut context = Context::new(&SHA256);
+    let mut buffer = [0; 1024];
+
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        context.update(&buffer[..count]);
+    }
+
+    Ok(context.finish())
 }
