@@ -83,7 +83,7 @@ fn extract_signature_and_message(mut document: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
 
     let message = parse_byte_range(&document.as_slice()[byte_range_start..byte_range_end])
         .iter()
-        .map(|range| document.as_slice()[range.0..range.1].to_vec())
+        .map(|range| document.as_slice()[range.0..(range.0+range.1)].to_vec())
         .concat();
 
 
