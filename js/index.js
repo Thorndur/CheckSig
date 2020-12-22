@@ -23,17 +23,9 @@ import("../pkg").then(module =>{
             const asn1 = asn1js.fromBER(signatureArray.buffer);
             let SigObject = new Signature({ schema: asn1.result });
 
-            let signedHash = SigObject.signerInfos[0].signature.valueBlock.valueHex;
-
-
-
-
-            //console.log(signedHash);
-
-            let publicKey = SigObject.certificates[0].subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHex;
-
-            console.log(signedHash);
-            //console.log(SigObject.certificates[0].subjectPublicKeyInfo.subjectPublicKey);
+            let signedAttributes = new Uint8Array(SigObject.signerInfos[0].signedAttrs.encodedValue);
+            let signedHash = new Uint8Array(SigObject.signerInfos[0].signature.valueBlock.valueHex);
+            let publicKey = new Uint8Array(SigObject.certificates[0].subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHex);
 
             //signature = Array.prototype.map.call(new Uint8Array(signature), x => ('00' + x.toString(16)).slice(-2)).join('');
 
