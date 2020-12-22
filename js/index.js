@@ -24,6 +24,10 @@ import("../pkg").then(module =>{
             let SigObject = new Signature({ schema: asn1.result });
 
             let signedAttributes = new Uint8Array(SigObject.signerInfos[0].signedAttrs.encodedValue);
+
+            let messageHash =  new Uint8Array(SigObject.signerInfos[0].signedAttrs.attributes
+                .find(attribute => attribute.type === "1.2.840.113549.1.9.4").values[0].valueBlock.valueHex);
+
             let signedHash = new Uint8Array(SigObject.signerInfos[0].signature.valueBlock.valueHex);
             let publicKey = new Uint8Array(SigObject.certificates[0].subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHex);
 
