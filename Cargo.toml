@@ -1,7 +1,7 @@
 # You must change these to your own details.
 [package]
-name = "rust-webpack-template"
-description = "My super awesome Rust, WebAssembly, and Webpack project!"
+name = "check-sig"
+description = "Application to verify PAdES signed PDFs"
 version = "0.1.0"
 authors = ["You <you@example.com>"]
 categories = ["wasm"]
@@ -17,27 +17,36 @@ crate-type = ["cdylib"]
 
 
 [dependencies]
-# The `wasm-bindgen` crate provides the bare minimum functionality needed
-# to interact with JavaScript.
-wasm-bindgen = "0.2.68"
 
 # `wee_alloc` is a tiny allocator for wasm that is only ~1K in code size
 # compared to the default allocator's ~10K. However, it is slower than the default
 # allocator, so it's not enabled by default.
-wee_alloc = { version = "0.4.2", optional = true }
+# wee_alloc = { version = "0.4.2", optional = true }
+# The `wasm-bindgen` crate provides the bare minimum functionality needed
+# to interact with JavaScript.
+anyhow = "1.0.38"
 
+wasm-bindgen = "0.2.69"
+wasm-bindgen-futures = "0.4.19"
+
+serde-wasm-bindgen = "0.1.3"
 js-sys = "0.3.45"
 hex = "0.4.2"
 itertools = "0.9.0"
-once_cell = "1.5.2"
-#serde = "1.0.118"
-#serde_derive = "1.0.118"
-#serde_bytes = "0.11.5"
-#picky-asn1-der = "0.2.4"
-#picky-asn1 = "0.3.0"
+der-parser = "5.0.0"
+oid-registry = "0.1.1"
+untrusted = "0.7.1"
+
+[dependencies.x509-parser]
+x509-parser = "0.9.0"
+features = ["verify"]
+
+[dependencies.reqwest]
+version = "0.11.0"
+features = ["blocking"]
 
 [dependencies.serde]
-version = "1.0.117"
+version = "1.0.120"
 features = ["derive"]
 
 [dependencies.p256]
@@ -50,7 +59,7 @@ features = ["ecdsa",
 ]
 
 [dependencies.ring]
-version = "0.17.0-alpha.8"
+version = "0.16.19"
 features = ["wasm32_c", "std"]
 
 # The `web-sys` crate allows you to interact with the various browser APIs,
@@ -65,6 +74,14 @@ features = ["console",
     'Window',
     'EventListener',
     'EventTarget',
+    'Headers',
+    'Request',
+    'RequestInit',
+    'RequestMode',
+    'Response',
+    'ResponseInit',
+    'ResponseType',
+    'Window',
 ]
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
@@ -77,8 +94,6 @@ console_error_panic_hook = "0.1.6"
 # These crates are used for running unit tests.
 [dev-dependencies]
 wasm-bindgen-test = "0.3.18"
-futures = "0.3.8"
-wasm-bindgen-futures = "0.4.18"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-Oz", "--enable-mutable-globals"]

@@ -1,10 +1,15 @@
+use std::str;
 
-
+use anyhow::Result;
 use wasm_bindgen::prelude::*;
-use js_sys::{ArrayBuffer};
-use ring::digest::{Context, SHA256};
-use ring::{signature};
-use wasm_bindgen::__rt::std::io::{Error, Cursor, Read};
+
+use itertools::Itertools;
+use crate::byte_range::parse_byte_range;
+use crate::signature_verification::{check_signature, get_signature_parts_from_js_value};
+
+mod byte_range;
+mod certificate_verification;
+mod signature_verification;
 
 
 // When the `wee_alloc` feature is enabled, this uses `wee_alloc` as the global
@@ -23,6 +28,11 @@ extern "C" {
     fn log(s: String);
 }
 
+#[wasm_bindgen(module = "/js/signature.js")]
+extern "C" {
+   fn getSignatureParts(signatureArray: Vec<u8>) -> JsValue;
+}
+
 // This is like the `main` function, except for JavaScript.
 #[wasm_bindgen(start)]
 pub fn main_js() -> Result<(), JsValue> {
@@ -34,18 +44,34 @@ pub fn main_js() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn get_signature_from_file(array_buffer: &[u8]) -> Vec<u8> {
-    let (signature, message) = extract_signature_and_message(array_buffer.to_vec());
-
-    let mut message_hash = MESSAGE_HASH_MUTEX.lock().unwrap();
-    *message_hash = sha256_digest(message.as_slice()).unwrap().as_ref().to_vec();
-
-    signature
+pub async fn check_document(array_buffer: Vec<u8>) -> bool {
+    let (signature, message) = extract_signature_and_message(array_buffer);
+    log(hex::encode(signature.as_slice()));
+    let signature_parts = get_signature_parts_from_js_value(getSignatureParts(signature));
+    check_signature(signature_parts, message.as_slice()).await.is_ok()
 }
 
 fn extract_signature_and_message(document: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+    // let signature_element_start_separator = b"/Type /Sig";
+    // let signature_element_start_position = document
+    //     .windows(signature_element_start_separator.len())
+    //     .position(|window| window == signature_element_start_separator)
+    //     .unwrap() + signature_element_start_separator.len();
+    //
+    // let signature_date_start_separator = b"/M (D:";
+    // let signature_date_start_position = document.split_at(signature_element_start_position).1
+    //     .windows(signature_date_start_separator.len())
+    //     .position(|window| window == signature_date_start_separator)
+    //     .unwrap() + signature_date_start_separator.len();
+    //
+    // let signature_date_end_separator = b")";
+    // let signature_date_end_position = document.split_at(signature_date_start_position).1
+    //     .windows(signature_date_end_separator.len())
+    //     .position(|window| window == signature_date_end_separator)
+    //     .unwrap() + signature_date_end_separator.len();
+
     let start_separator = b"/Contents <";
-    let start_position = document
+    let start_position = document//.split_at(signature_date_end_position).1
         .windows(start_separator.len())
         .position(|window| window == start_separator)
         .unwrap() + start_separator.len();
@@ -82,26 +108,19 @@ fn extract_signature_and_message(document: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
         ).as_bytes()
     ).unwrap();
 
-    SignatureAndMessage {
-        signature,
-        hash: document_without_signature
-    }
+    // let date = &document.as_slice()[signature_date_start_position..signature_date_end_position];
+    //
+    // log(str::from_utf8(date).unwrap().to_string());
+
+    (signature, message)
 }
 
-#[wasm_bindgen]
-pub fn check_signature(signed_attributes_buffer: &[u8], message_hash_buffer: &[u8], signature_buffer: &[u8], public_key_buffer: &[u8]) -> bool {
-    if message_hash_buffer.eq(MESSAGE_HASH_MUTEX.lock().unwrap().as_slice()) {
-        let signature = Signature::from_asn1(signature_buffer).unwrap();
-        let public_key = VerifyingKey::from_sec1_bytes(public_key_buffer).unwrap();
 
-        public_key
-            .verify(signed_attributes_buffer, &signature)
-            .is_ok()
 
-    } else {
-        false
-    }
-}
+
+
+
+
 
 // #[wasm_bindgen]
 // pub fn check_signature(signed_attributes_buffer: &[u8], message_hash_buffer: &[u8], signature_buffer: &[u8], public_key_buffer: &[u8]) -> bool {
@@ -118,17 +137,3 @@ pub fn check_signature(signed_attributes_buffer: &[u8], message_hash_buffer: &[u
 //         false
 //     }
 // }
-
-fn sha256_digest<R: Read>(mut reader: R) -> Result<Digest, Error> {
-    let mut context = ring::digest::Context::new(&SHA256);
-    let mut buffer = [0; 1024];
-
-    loop {
-        let count = reader.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        context.update(&buffer[..count]);
-    }
-    Ok(context.finish())
-}
