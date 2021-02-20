@@ -8,11 +8,7 @@ import("../pkg").then(module =>{
         var fileData = new Blob([event.target.files[0]]);
         fileData.arrayBuffer().then(function (result) {
 
-            const asn1js = require("asn1js");
-            const pkijs = require("pkijs");
-
-            const Signature = pkijs.SignedData;
-
+            let signature_valid = module.check_document(new Uint8Array(result));
 
             output.innerText = `signature is ${signature_valid ? '': 'not '}valid`;
         });

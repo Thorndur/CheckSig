@@ -1,6 +1,4 @@
 export function getSignatureParts(signatureArray) {
-
-
     const asn1js = require("asn1js");
     const pkijs = require("pkijs");
 

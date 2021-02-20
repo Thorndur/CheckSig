@@ -1,11 +1,11 @@
 use std::str;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 
 use wasm_bindgen::__rt::core::pin::Pin;
 use wasm_bindgen::__rt::core::future::Future;
 
-use x509_parser::{parse_x509_certificate, parse_x509_crl};
+use x509_parser::parse_x509_certificate;
 use x509_parser::certificate::X509Certificate;
 use x509_parser::extensions::{ParsedExtension, GeneralName};
 
@@ -20,60 +20,78 @@ use der_parser::oid;
 use oid_registry::*;
 
 
+pub(crate) fn check_root_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
+    Box::pin(async move {
+
+        verify_signature(&certificate, certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
+    })
+}
+
 pub(crate) fn check_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
     Box::pin(async move {
+
 
         // Certificate Authority Information Access
 
         let authority_info_access_uri_result = get_authority_info_access_uri(&certificate);
 
         match authority_info_access_uri_result {
-            Ok(authority_info_access_uri) => {
-                let parent_certificate_vec = fetch_vec_u8_from_url(authority_info_access_uri).await?;
+            Ok(parent_certificate_url) => {
+                let parent_certificate_vec = fetch_vec_u8_from_url(parent_certificate_url).await?;
 
                 let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).unwrap();
 
                 match verify_signature(&certificate, parent_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref()) {
-                    Ok(_) => {
-
-                        match certificate.tbs_certificate.extensions.get(&oid!(2.5.29.31)) {
-                            Some(parsed_extension) => {
-                                if let ParsedExtension::UnsupportedExtension = parsed_extension.parsed_extension() {
-                                    let url_string_end = usize::from(9 + parsed_extension.value[9]);
-                                    let url_byte_slice = &parsed_extension.value[10..=url_string_end];
-                                    let url = str::from_utf8(url_byte_slice).unwrap();
-
-                                    // log(url.to_string());
-                                    //
-                                    // let certificate_revocation_list_byte_array = fetch_vec_u8_from_url(url).await?;
-                                    //
-                                    // log("1".to_string());
-                                    // let (_, certificate_revocation_list) = parse_x509_crl(certificate_revocation_list_byte_array.as_slice())?;
-                                    //
-                                    // log("2".to_string());
-                                    // log(certificate_revocation_list.tbs_cert_list.revoked_certificates.len().to_string());
-                                    // if (certificate_revocation_list.iter_revoked_certificates().any(|revoked| revoked.user_certificate == certificate.tbs_certificate.serial)) { //&& revoked.revocation_date < signing_date)
-                                    //     log("revoked".to_string());
-                                    // } else {
-                                    //     log("not revoked".to_string());
-                                    // }
-                                }
-                            }
-                            None => { bail!("Missing Certificate extension: CRL Distribution Points"); }
-                        };
-                        check_certificate(parent_certificate).await
-                    }
-                    Err(_) => {bail!("Certificate Signature is Invalid");}
+                    Ok(_) => check_certificate(parent_certificate).await,
+                    Err(_) => bail!("Certificate Signature is Invalid")
                 }
-            }
+            },
             Err(_) => {
-                Ok(())  //Root Certificate?
+                let root_certificate_vec = fetch_vec_u8_from_url(get_root_cert_url(&certificate).as_str()).await?;
+
+                let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).unwrap();
+
+                verify_signature(&certificate, root_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
             }
         }
-
-
-
     })
+}
+
+fn get_root_cert_url(certificate: &X509Certificate) -> String {
+    let issuer_common_name =
+        certificate.tbs_certificate.issuer
+            .iter_common_name()
+            .next().expect("missing common name")
+            .attr_value.content.as_str().expect("missing common name");
+
+    log(issuer_common_name.clone().to_string());
+    format!("./certs/{}.crt", issuer_common_name)
+}
+
+fn get_authority_cert_serial<'a>(certificate: &'a X509Certificate) -> Result<&'a [u8]> {
+    log("get_authority_cert_serial".to_string());
+    return match certificate.tbs_certificate.extensions().get(&oid!(2.5.29.35)) {
+        Some(parsed_extension) => {
+            if let ParsedExtension::AuthorityKeyIdentifier(authority_key_identifier) = parsed_extension.parsed_extension() {
+
+                log("get_authority_cert_serial AuthorityKeyIdentifier".to_string());
+                // Parent Certificate
+
+                match authority_key_identifier.authority_cert_serial {
+                    None =>  {
+                        log("get_authority_cert_serial no authority_cert_serial".to_string());
+                        bail!("no Authority_cert_serial_found")
+                    },
+                    Some(authority_cert_serial) => {
+                        log("get_authority_cert_serial authority_cert_serial".to_string());
+
+                        Ok(authority_cert_serial)
+                    }
+                }
+            } else { bail!("Certificate Authority Information Access is invalid") }
+        }
+        None => bail!("Missing Certificate extension: Certificate Authority Information Acces")
+    };
 }
 
 fn get_authority_info_access_uri<'a>(certificate: &'a X509Certificate) -> Result<&'a str> {
@@ -142,11 +160,11 @@ fn verify_signature(
 
         let result = match public_key.verify(certificate.tbs_certificate.as_ref(), &signature){
             Ok(_) => Ok(()),
-            Err(_) => Err(anyhow!("Certificate Verification failed"))
+            Err(_) => bail!("Certificate Verification failed")
         };
         return result;
 
-    }else {
+    } else {
         bail!("Unsupported Signature Algorithm");
     };
 
@@ -155,5 +173,9 @@ fn verify_signature(
 async fn fetch_vec_u8_from_url(url: &str) -> Result<Vec<u8>> {
     log(format!("fetching {}", url).to_string());
     let response = reqwest::get(url).await.context(format!("{} couldnt be loaded", url))?;
-    Ok(response.bytes().await?.to_vec())
+
+    let response_bytes = response.bytes().await?.to_vec();
+
+    log(format!("fetched {}", hex::encode(response_bytes.clone()).as_str()).to_string());
+    Ok(response_bytes)
 }

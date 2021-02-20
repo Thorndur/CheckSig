@@ -11,7 +11,7 @@ use p256::ecdsa::signature::Verifier;
 use serde::{Serialize, Deserialize};
 
 use ring::digest::SHA256;
-use crate::certificate_verification::check_certificate;
+use crate::certificate::check_certificate;
 
 
 #[derive(Serialize, Deserialize)]
