@@ -1,6 +1,6 @@
 use std::str;
 
-use anyhow::Result;
+use anyhow::{Result, Error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
@@ -45,8 +45,14 @@ pub fn main_js() -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub async fn check_document(array_buffer: Vec<u8>) -> Result<(), JsValue> {
-    let (signature, message) = extract_signature_and_message_from_pdf_file(array_buffer);
-    log(hex::encode(signature.as_slice()));
-    let signature_parts = get_signature_parts_from_js_value(getSignatureParts(signature));
-    check_signature(signature_parts, message.as_slice()).await.map_err(|error| JsValue::from_str(error.to_string().as_str()))
+    match extract_signature_and_message_from_pdf_file(array_buffer) {
+        Ok(result) => {
+            let (signature, message) = result;
+
+            //log(hex::encode(signature.as_slice()));
+            let signature_parts = get_signature_parts_from_js_value(getSignatureParts(signature));
+            check_signature(signature_parts, message.as_slice()).await.map_err(|error| JsValue::from_str(error.to_string().as_str()))
+        }
+        Err(error) => Err(JsValue::from_str(error.to_string().as_str()))
+    }
 }

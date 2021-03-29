@@ -1,6 +1,6 @@
 # You must change these to your own details.
 [package]
-name = "check-sig"
+name = "check_sig"
 description = "Application to verify PAdES signed PDFs"
 version = "0.1.0"
 authors = ["You <you@example.com>"]
@@ -37,16 +37,19 @@ der-parser = "5.0.0"
 oid-registry = "0.1.1"
 untrusted = "0.7.1"
 
+picky-asn1-der = "0.2.4"
+picky-asn1 = "0.3.1"
+
 [dependencies.x509-parser]
-x509-parser = "0.9.0"
+x509-parser = "0.9.1"
 features = ["verify"]
 
 [dependencies.reqwest]
-version = "0.11.0"
+version = "0.11.1"
 features = ["blocking"]
 
 [dependencies.serde]
-version = "1.0.120"
+version = "1.0.123"
 features = ["derive"]
 
 [dependencies.p256]
@@ -59,19 +62,17 @@ features = ["ecdsa",
 ]
 
 [dependencies.ring]
-version = "0.16.19"
+version = "0.16.20"
 features = ["wasm32_c", "std"]
 
 # The `web-sys` crate allows you to interact with the various browser APIs,
 # like the DOM.
 [dependencies.web-sys]
-version = "0.3.45"
+version = "0.3.47"
 features = ["console",
     'Document',
     'Element',
     'HtmlElement',
-    'Node',
-    'Window',
     'EventListener',
     'EventTarget',
     'Headers',
@@ -82,6 +83,7 @@ features = ["console",
     'ResponseInit',
     'ResponseType',
     'Window',
+    'Location',
 ]
 
 # The `console_error_panic_hook` crate provides better debugging of panics by

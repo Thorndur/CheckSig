@@ -18,13 +18,12 @@ use ring::signature::VerificationAlgorithm;
 
 use der_parser::oid;
 use oid_registry::*;
+use web_sys::window;
 
 
-pub(crate) fn check_root_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
-    Box::pin(async move {
-
-        verify_signature(&certificate, certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
-    })
+fn check_root_certificate(certificate: X509Certificate) -> Result<()> {
+    //certificate.verify_signature(Some(&certificate.tbs_certificate.subject_pki)).context("Certificate Verification failed")
+    verify_signature(&certificate, certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
 }
 
 pub(crate) fn check_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
@@ -37,9 +36,10 @@ pub(crate) fn check_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ 
 
         match authority_info_access_uri_result {
             Ok(parent_certificate_url) => {
-                let parent_certificate_vec = fetch_vec_u8_from_url(parent_certificate_url).await?;
+                let parent_certificate_vec = fetch_vec_u8_from_url(parent_certificate_url).await
+                    .context(format!("Parent certificate from {} couldn't be loaded", parent_certificate_url))?;
 
-                let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).unwrap();
+                let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).expect("Parent certificate couldn't be parsed");
 
                 match verify_signature(&certificate, parent_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref()) {
                     Ok(_) => check_certificate(parent_certificate).await,
@@ -47,11 +47,14 @@ pub(crate) fn check_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ 
                 }
             },
             Err(_) => {
-                let root_certificate_vec = fetch_vec_u8_from_url(get_root_cert_url(&certificate).as_str()).await?;
+                let root_certificate_url = get_root_cert_url(&certificate);
+                let root_certificate_vec = fetch_vec_u8_from_url(root_certificate_url.as_str()).await
+                    .context(format!("root certificate from {} couldn't be loaded", root_certificate_url))?;
 
-                let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).unwrap();
+                let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).expect("Root certificate couldn't be parsed");
 
                 verify_signature(&certificate, root_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
+                    .and_then(|_| check_root_certificate(root_certificate))
             }
         }
     })
@@ -66,32 +69,6 @@ fn get_root_cert_url(certificate: &X509Certificate) -> String {
 
     log(issuer_common_name.clone().to_string());
     format!("./certs/{}.crt", issuer_common_name)
-}
-
-fn get_authority_cert_serial<'a>(certificate: &'a X509Certificate) -> Result<&'a [u8]> {
-    log("get_authority_cert_serial".to_string());
-    return match certificate.tbs_certificate.extensions().get(&oid!(2.5.29.35)) {
-        Some(parsed_extension) => {
-            if let ParsedExtension::AuthorityKeyIdentifier(authority_key_identifier) = parsed_extension.parsed_extension() {
-
-                log("get_authority_cert_serial AuthorityKeyIdentifier".to_string());
-                // Parent Certificate
-
-                match authority_key_identifier.authority_cert_serial {
-                    None =>  {
-                        log("get_authority_cert_serial no authority_cert_serial".to_string());
-                        bail!("no Authority_cert_serial_found")
-                    },
-                    Some(authority_cert_serial) => {
-                        log("get_authority_cert_serial authority_cert_serial".to_string());
-
-                        Ok(authority_cert_serial)
-                    }
-                }
-            } else { bail!("Certificate Authority Information Access is invalid") }
-        }
-        None => bail!("Missing Certificate extension: Certificate Authority Information Acces")
-    };
 }
 
 fn get_authority_info_access_uri<'a>(certificate: &'a X509Certificate) -> Result<&'a str> {
@@ -153,9 +130,11 @@ fn verify_signature(
 
     } else if *signature_alg == OID_SIG_ECDSA_WITH_SHA256 {
 
-        let signature = Signature::from_asn1(&certificate.signature_value.as_ref()).unwrap();
+        let signature = Signature::from_asn1(&certificate.signature_value.as_ref())
+            .expect("Certificate signature couldn't be parsed");
 
-        let public_key = VerifyingKey::from_sec1_bytes(parent_public_key.as_ref()).unwrap();
+        let public_key = VerifyingKey::from_sec1_bytes(parent_public_key.as_ref())
+            .expect("Parent certificate public key couldn't be parsed");
 
 
         let result = match public_key.verify(certificate.tbs_certificate.as_ref(), &signature){
@@ -171,11 +150,29 @@ fn verify_signature(
 }
 
 async fn fetch_vec_u8_from_url(url: &str) -> Result<Vec<u8>> {
-    log(format!("fetching {}", url).to_string());
-    let response = reqwest::get(url).await.context(format!("{} couldnt be loaded", url))?;
+    if url.len() > 0 {
 
-    let response_bytes = response.bytes().await?.to_vec();
+        let absoute_url;
 
-    log(format!("fetched {}", hex::encode(response_bytes.clone()).as_str()).to_string());
-    Ok(response_bytes)
+        if url.chars().next().unwrap() == '.' {
+            let location_origin = window()
+                .expect("Origin Url couldn't be detected").
+                location().origin()
+                .expect("Origin Url couldn't be detected");
+
+            absoute_url = format!("{}{}", location_origin, url[1..].to_string());
+        } else {
+            absoute_url = url.to_string();
+        }
+
+        log(format!("fetching {}", absoute_url).to_string());
+        let response = reqwest::get(&absoute_url).await.context(format!("{} couldn't be fetched", absoute_url))?;
+
+        let response_bytes = response.bytes().await?.to_vec();
+
+        log(format!("fetched {}", hex::encode(response_bytes.clone()).as_str()).to_string());
+        Ok(response_bytes)
+    } else {
+        bail!("Cant fetch from empty ulr")
+    }
 }

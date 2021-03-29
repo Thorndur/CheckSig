@@ -1,16 +1,16 @@
-import getSignatureParts from './signature'
 import("../pkg").then(module =>{
     var file = document.getElementById( "file" );
     var output = document.getElementById( "output" );
 
     file.addEventListener( "change", function( event ) {
-        output.innerText = "calculating";
+        output.innerText = "checking";
         var fileData = new Blob([event.target.files[0]]);
         fileData.arrayBuffer().then(function (result) {
-
-            let signature_valid = module.check_document(new Uint8Array(result));
-
-            output.innerText = `signature is ${signature_valid ? '': 'not '}valid`;
+            module.check_document(new Uint8Array(result))
+                .then(output.innerText = "signature is valid")
+                .catch(error => {
+                    output.innerText = "Error: " + error
+                });
         });
     });
 })

@@ -1,6 +1,8 @@
 use itertools::Itertools;
+use anyhow::Context;
+use anyhow::Result;
 
-pub fn extract_signature_and_message_from_pdf_file(document: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+pub fn extract_signature_and_message_from_pdf_file(document: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>)> {
     // let signature_element_start_separator = b"/Type /Sig";
     // let signature_element_start_position = document
     //     .windows(signature_element_start_separator.len())
@@ -23,25 +25,25 @@ pub fn extract_signature_and_message_from_pdf_file(document: Vec<u8>) -> (Vec<u8
     let start_position = document//.split_at(signature_date_end_position).1
         .windows(start_separator.len())
         .position(|window| window == start_separator)
-        .unwrap() + start_separator.len();
+        .context("Signature couldn't be extracted")? + start_separator.len();
 
     let end_separator = b">";
     let end_position = document.split_at(start_position).1
         .windows(end_separator.len())
         .position(|window| window == end_separator)
-        .unwrap() + start_position;
+        .context("Signature couldn't be extracted")?+ start_position;
 
     let byte_range_start_separator = b"/ByteRange [";
     let byte_range_start = document.split_at(end_position).1
         .windows(byte_range_start_separator.len())
         .position(|window| window == byte_range_start_separator)
-        .unwrap() + end_position + byte_range_start_separator.len();
+        .context("Signature Message couldn't be extracted")?+ end_position + byte_range_start_separator.len();
 
     let byte_range_end_separator = b"]";
     let byte_range_end = document.split_at(byte_range_start).1
         .windows(byte_range_end_separator.len())
         .position(|window| window == byte_range_end_separator)
-        .unwrap() + byte_range_start;
+        .context("Signature Message couldn't be extracted")? + byte_range_start;
 
     let message = parse_byte_range(&document.as_slice()[byte_range_start..byte_range_end])
         .iter()
@@ -55,13 +57,13 @@ pub fn extract_signature_and_message_from_pdf_file(document: Vec<u8>) -> (Vec<u8
         String::from_utf8_lossy(
             signature_bytes.as_slice()
         ).as_bytes()
-    ).unwrap();
+    ).context("Signature couldn't be extracted")?;
 
     // let date = &document.as_slice()[signature_date_start_position..signature_date_end_position];
     //
     // log(str::from_utf8(date).unwrap().to_string());
 
-    (signature, message)
+    Ok((signature, message))
 }
 
 #[test]
