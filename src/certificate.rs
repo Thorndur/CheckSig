@@ -19,15 +19,36 @@ use ring::signature::VerificationAlgorithm;
 use der_parser::oid;
 use oid_registry::*;
 use web_sys::window;
+use chrono::{DateTime, FixedOffset};
 
 
-fn check_root_certificate(certificate: X509Certificate) -> Result<()> {
+fn check_root_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Result<()> {
+    let certificate_validity_start_date_time =
+        DateTime::parse_from_rfc2822(certificate.validity().not_before.to_rfc2822().as_str()).unwrap();
+
+    let certificate_validity_end_date_time =
+        DateTime::parse_from_rfc2822(certificate.validity().not_after.to_rfc2822().as_str()).unwrap();
+
+    if certificate_validity_start_date_time > signing_date_time
+        && signing_date_time > certificate_validity_end_date_time {
+        bail!("Signature date is too old or too new");
+    }
     //certificate.verify_signature(Some(&certificate.tbs_certificate.subject_pki)).context("Certificate Verification failed")
     verify_signature(&certificate, certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
 }
 
-pub(crate) fn check_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
+pub(crate) fn check_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
     Box::pin(async move {
+        let certificate_validity_start_date_time =
+            DateTime::parse_from_rfc2822(certificate.validity().not_before.to_rfc2822().as_str()).unwrap();
+
+        let certificate_validity_end_date_time =
+            DateTime::parse_from_rfc2822(certificate.validity().not_after.to_rfc2822().as_str()).unwrap();
+
+        if certificate_validity_start_date_time > signing_date_time
+            && signing_date_time > certificate_validity_end_date_time {
+            bail!("Signature date is too old or too new");
+        }
 
 
         // Certificate Authority Information Access
@@ -42,7 +63,7 @@ pub(crate) fn check_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ 
                 let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).expect("Parent certificate couldn't be parsed");
 
                 match verify_signature(&certificate, parent_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref()) {
-                    Ok(_) => check_certificate(parent_certificate).await,
+                    Ok(_) => check_certificate(parent_certificate, signing_date_time).await,
                     Err(_) => bail!("Certificate Signature is Invalid")
                 }
             },
@@ -54,7 +75,7 @@ pub(crate) fn check_certificate(certificate: X509Certificate) -> Pin<Box<dyn '_ 
                 let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).expect("Root certificate couldn't be parsed");
 
                 verify_signature(&certificate, root_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
-                    .and_then(|_| check_root_certificate(root_certificate))
+                    .and_then(|_| check_root_certificate(root_certificate, signing_date_time))
             }
         }
     })

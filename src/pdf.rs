@@ -1,25 +1,28 @@
 use itertools::Itertools;
 use anyhow::Context;
 use anyhow::Result;
+use crate::log;
+use chrono::DateTime;
+use chrono::FixedOffset;
 
-pub fn extract_signature_and_message_from_pdf_file(document: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>)> {
-    // let signature_element_start_separator = b"/Type /Sig";
-    // let signature_element_start_position = document
-    //     .windows(signature_element_start_separator.len())
-    //     .position(|window| window == signature_element_start_separator)
-    //     .unwrap() + signature_element_start_separator.len();
-    //
-    // let signature_date_start_separator = b"/M (D:";
-    // let signature_date_start_position = document.split_at(signature_element_start_position).1
-    //     .windows(signature_date_start_separator.len())
-    //     .position(|window| window == signature_date_start_separator)
-    //     .unwrap() + signature_date_start_separator.len();
-    //
-    // let signature_date_end_separator = b")";
-    // let signature_date_end_position = document.split_at(signature_date_start_position).1
-    //     .windows(signature_date_end_separator.len())
-    //     .position(|window| window == signature_date_end_separator)
-    //     .unwrap() + signature_date_end_separator.len();
+pub fn extract_signature_message_and_signing_date_time_from_pdf(document: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, DateTime<FixedOffset>)> {
+    let signature_element_start_separator = b"/Type /Sig";
+    let signature_element_start_position = document
+        .windows(signature_element_start_separator.len())
+        .position(|window| window == signature_element_start_separator)
+        .context("Signature couldn't be found")? + signature_element_start_separator.len();
+
+    let signature_date_start_separator = b"/M (D:";
+    let signature_date_start_position = document.split_at(signature_element_start_position).1
+        .windows(signature_date_start_separator.len())
+        .position(|window| window == signature_date_start_separator)
+        .context("Signature date couldn't be extracted")? + signature_element_start_position + signature_date_start_separator.len();
+
+    let signature_date_end_separator = b")";
+    let signature_date_end_position = document.split_at(signature_date_start_position).1
+        .windows(signature_date_end_separator.len())
+        .position(|window| window == signature_date_end_separator)
+        .context("Signature date couldn't be extracted")? + signature_date_start_position;
 
     let start_separator = b"/Contents <";
     let start_position = document//.split_at(signature_date_end_position).1
@@ -53,17 +56,21 @@ pub fn extract_signature_and_message_from_pdf_file(document: Vec<u8>) -> Result<
     // first 38 bytes are removed to ignore PAdES wrapper of CMS
     let signature_bytes = document.as_slice()[start_position+38..end_position].to_vec().clone();
 
+    let date = String::from_utf8_lossy(&document.as_slice()[signature_date_start_position..signature_date_end_position]).to_string();
+
+
+    let parsingDate = date.replace("'", "");
+
+    let datetime = DateTime::parse_from_str(parsingDate.as_str(), "%Y%m%d%H%M%S%z")
+        .expect("Signing date couldn't be parsed");
+
     let signature = hex::decode(
         String::from_utf8_lossy(
             signature_bytes.as_slice()
         ).as_bytes()
     ).context("Signature couldn't be extracted")?;
 
-    // let date = &document.as_slice()[signature_date_start_position..signature_date_end_position];
-    //
-    // log(str::from_utf8(date).unwrap().to_string());
-
-    Ok((signature, message))
+    Ok((signature, message, datetime))
 }
 
 #[test]

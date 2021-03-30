@@ -12,6 +12,7 @@ use serde::{Serialize, Deserialize};
 
 use ring::digest::SHA256;
 use crate::certificate::check_certificate;
+use chrono::{DateTime, FixedOffset};
 
 
 #[derive(Serialize, Deserialize)]
@@ -26,7 +27,7 @@ pub(crate) fn get_signature_parts_from_js_value(js_value: JsValue) -> SignatureP
     serde_wasm_bindgen::from_value(js_value).expect("Signature parts couldn't be parsed")
 }
 
-pub(crate) async fn check_signature(signature_parts: SignatureParts, message: &[u8]) -> Result<()> {
+pub(crate) async fn check_signature(signature_parts: SignatureParts, message: &[u8], signing_date_time: DateTime<FixedOffset>) -> Result<()> {
 
     let mut context = ring::digest::Context::new(&SHA256);
     message.chunks(1024).for_each( |chunk| context.update(chunk));
