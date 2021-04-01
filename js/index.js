@@ -1,4 +1,4 @@
-import("../pkg").then(module =>{
+import("../pkg").then(module => {
     var file = document.getElementById( "file" );
     var output = document.getElementById( "output" );
 

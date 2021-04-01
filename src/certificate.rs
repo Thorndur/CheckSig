@@ -88,7 +88,6 @@ fn get_root_cert_url(certificate: &X509Certificate) -> String {
             .next().expect("missing common name")
             .attr_value.content.as_str().expect("missing common name");
 
-    log(issuer_common_name.clone().to_string());
     format!("./certs/{}.crt", issuer_common_name)
 }
 
@@ -114,7 +113,6 @@ fn verify_signature(
 ) -> Result<()> {
     use ring::signature;
     let signature_alg = &certificate.signature_algorithm.algorithm;
-    log(signature_alg.to_string());
     //certificate.verify_signature()
 
     if *signature_alg == OID_PKCS1_SHA1WITHRSA {
@@ -186,12 +184,10 @@ async fn fetch_vec_u8_from_url(url: &str) -> Result<Vec<u8>> {
             absoute_url = url.to_string();
         }
 
-        log(format!("fetching {}", absoute_url).to_string());
         let response = reqwest::get(&absoute_url).await.context(format!("{} couldn't be fetched", absoute_url))?;
 
         let response_bytes = response.bytes().await?.to_vec();
 
-        log(format!("fetched {}", hex::encode(response_bytes.clone()).as_str()).to_string());
         Ok(response_bytes)
     } else {
         bail!("Cant fetch from empty ulr")
