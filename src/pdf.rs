@@ -5,7 +5,7 @@ use crate::log;
 use chrono::DateTime;
 use chrono::FixedOffset;
 
-pub fn extract_signature_message_and_signing_date_time_from_pdf(document: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, DateTime<FixedOffset>)> {
+pub fn extract_pdf_data(document: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, DateTime<FixedOffset>)> {
     let signature_element_start_separator = b"/Type /Sig";
     let signature_element_start_position = document
         .windows(signature_element_start_separator.len())

@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
 use crate::signature::{check_signature, get_signature_parts_from_js_value};
-use crate::pdf::extract_signature_message_and_signing_date_time_from_pdf;
+use crate::pdf::extract_pdf_data;
 
 mod certificate;
 mod pdf;
@@ -45,7 +45,7 @@ pub fn main_js() -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub async fn check_document(array_buffer: Vec<u8>) -> Result<(), JsValue> {
-    match extract_signature_message_and_signing_date_time_from_pdf(array_buffer) {
+    match extract_pdf_data(array_buffer) {
         Ok(result) => {
             let (signature, message, signing_date_time) = result;
 
