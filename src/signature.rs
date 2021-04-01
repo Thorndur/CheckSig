@@ -1,21 +1,13 @@
 use wasm_bindgen::JsValue;
 use x509_parser::parse_x509_certificate;
-use anyhow::{Result, bail, Context};
-
-use der_parser::oid;
-
-use p256::ecdsa::VerifyingKey;
-use p256::ecdsa::Signature;
-use p256::ecdsa::signature::Verifier;
-
+use anyhow::{Result, bail};
 
 use serde::{Serialize, Deserialize};
 
 use ring::digest::SHA256;
-use crate::certificate::{check_certificate_chain, check_certificate};
+use crate::certificate::check_certificate;
 use chrono::{DateTime, FixedOffset};
-use der_parser::oid::{Oid, ParseError};
-use oid_registry::OidEntry;
+use der_parser::oid::Oid;
 use crate::crypography::verify_signed_message;
 
 

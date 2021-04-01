@@ -1,6 +1,6 @@
 use std::str;
 
-use anyhow::{Result, Error};
+use anyhow::Result;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 

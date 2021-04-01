@@ -1,8 +1,7 @@
-use der_parser::oid;
 use oid_registry::*;
 use ring::signature::VerificationAlgorithm;
 use ring::signature;
-use anyhow::{Context, Result, bail, Error};
+use anyhow::{Context, Result, bail};
 use der_parser::oid::Oid;
 
 
@@ -11,8 +10,6 @@ use p256::ecdsa::Signature;
 use p256::ecdsa::signature::Verifier;
 
 pub(crate) fn verify_signed_message(signature_alg: &Oid, public_key: &[u8], message: &[u8], signature: &[u8]) -> Result<()> {
-
-
     if *signature_alg == OID_PKCS1_SHA1WITHRSA {
         signature::RSA_PKCS1_1024_8192_SHA1_FOR_LEGACY_USE_ONLY.verify(
             untrusted::Input::from(public_key),
@@ -43,7 +40,6 @@ pub(crate) fn verify_signed_message(signature_alg: &Oid, public_key: &[u8], mess
 
         let public_key = VerifyingKey::from_sec1_bytes(public_key)
             .expect("Parent certificate public key couldn't be parsed");
-
 
         match public_key.verify(message, &signature) {
             Ok(_) => Ok(()),

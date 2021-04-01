@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use anyhow::Context;
 use anyhow::Result;
-use crate::log;
 use chrono::DateTime;
 use chrono::FixedOffset;
 
@@ -59,9 +58,9 @@ pub fn extract_pdf_data(document: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, DateTime
     let date = String::from_utf8_lossy(&document.as_slice()[signature_date_start_position..signature_date_end_position]).to_string();
 
 
-    let parsingDate = date.replace("'", "");
+    let parsing_date = date.replace("'", "");
 
-    let datetime = DateTime::parse_from_str(parsingDate.as_str(), "%Y%m%d%H%M%S%z")
+    let datetime = DateTime::parse_from_str(parsing_date.as_str(), "%Y%m%d%H%M%S%z")
         .expect("Signing date couldn't be parsed");
 
     let signature = hex::decode(

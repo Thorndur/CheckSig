@@ -1,6 +1,6 @@
 use std::str;
 
-use anyhow::{Context, Result, bail, Error};
+use anyhow::{Context, Result, bail};
 
 use wasm_bindgen::__rt::core::pin::Pin;
 use wasm_bindgen::__rt::core::future::Future;
@@ -9,18 +9,10 @@ use x509_parser::parse_x509_certificate;
 use x509_parser::certificate::X509Certificate;
 use x509_parser::extensions::{ParsedExtension, GeneralName};
 
-use p256::ecdsa::VerifyingKey;
-use p256::ecdsa::Signature;
-use p256::ecdsa::signature::Verifier;
-use crate::log;
-use ring::signature::VerificationAlgorithm;
 
-
-use der_parser::oid;
-use oid_registry::*;
 use web_sys::window;
 use chrono::{DateTime, FixedOffset};
-use der_parser::oid::Oid;
+use der_parser::oid;
 use crate::crypography::verify_signed_message;
 
 fn check_root_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Result<()> {
