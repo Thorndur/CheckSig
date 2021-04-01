@@ -24,7 +24,7 @@ use chrono::{DateTime, FixedOffset};
 
 fn check_root_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Result<()> {
     if !is_in_certificate_valid_timerange(&certificate, &signing_date_time) {
-        bail!("Signature date is too old or too new");
+        bail!("Signature date is too old or too new for Root Certificate Validity Timerange");
     }
     else{
         verify_signature(&certificate, certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
@@ -34,7 +34,7 @@ fn check_root_certificate(certificate: X509Certificate, signing_date_time: DateT
 pub(crate) fn check_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
     Box::pin(async move {
         if !is_in_certificate_valid_timerange(&certificate, &signing_date_time) {
-            bail!("Signature date is too old or too new");
+            bail!("Signature date is too old or too new for Certificate Validity Timerange");
         }
         else {
             // Certificate Authority Information Access
@@ -75,8 +75,8 @@ fn is_in_certificate_valid_timerange(certificate: &X509Certificate, signing_date
     let certificate_validity_end_date_time =
         DateTime::parse_from_rfc2822(certificate.validity().not_after.to_rfc2822().as_str()).unwrap();
 
-    certificate_validity_start_date_time > signing_date_time
-        && signing_date_time > certificate_validity_end_date_time
+    certificate_validity_start_date_time < *signing_date_time
+        && *signing_date_time < certificate_validity_end_date_time
 }
 
 fn get_root_cert_url(certificate: &X509Certificate) -> String {
