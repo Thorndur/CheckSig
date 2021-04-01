@@ -13,12 +13,12 @@ export function getSignatureParts(signatureArray) {
         .find(attribute => attribute.type === "1.2.840.113549.1.9.4").values[0].valueBlock.valueHex);
 
     let signedHash = new Uint8Array(SigObject.signerInfos[0].signature.valueBlock.valueHex);
-    let publicKeys = SigObject.certificates.map(certificate => new Uint8Array(certificate.toSchema().toBER()));
+    let certificates = SigObject.certificates.map(certificate => new Uint8Array(certificate.toSchema().toBER()));
 
     return {
         signed_attributes_buffer: signedAttributes,
         message_hash_buffer: messageHash,
         signature_buffer: signedHash,
-        public_keys_buffer: publicKeys
+        certificates_buffer: certificates
     };
 }

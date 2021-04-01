@@ -23,62 +23,60 @@ use chrono::{DateTime, FixedOffset};
 
 
 fn check_root_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Result<()> {
+    if !is_in_certificate_valid_timerange(&certificate, &signing_date_time) {
+        bail!("Signature date is too old or too new");
+    }
+    else{
+        verify_signature(&certificate, certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
+    }
+}
+
+pub(crate) fn check_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
+    Box::pin(async move {
+        if !is_in_certificate_valid_timerange(&certificate, &signing_date_time) {
+            bail!("Signature date is too old or too new");
+        }
+        else {
+            // Certificate Authority Information Access
+
+            let authority_info_access_uri_result = get_authority_info_access_uri(&certificate);
+
+            match authority_info_access_uri_result {
+                Ok(parent_certificate_url) => {
+                    let parent_certificate_vec = fetch_vec_u8_from_url(parent_certificate_url).await
+                        .context(format!("Parent certificate from {} couldn't be loaded", parent_certificate_url))?;
+
+                    let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).expect("Parent certificate couldn't be parsed");
+
+                    match verify_signature(&certificate, parent_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref()) {
+                        Ok(_) => check_certificate(parent_certificate, signing_date_time).await,
+                        Err(_) => bail!("Certificate Signature is Invalid")
+                    }
+                },
+                Err(_) => {
+                    let root_certificate_url = get_root_cert_url(&certificate);
+                    let root_certificate_vec = fetch_vec_u8_from_url(root_certificate_url.as_str()).await
+                        .context(format!("root certificate from {} couldn't be loaded", root_certificate_url))?;
+
+                    let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).expect("Root certificate couldn't be parsed");
+
+                    verify_signature(&certificate, root_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
+                        .and_then(|_| check_root_certificate(root_certificate, signing_date_time))
+                }
+            }
+        }
+    })
+}
+
+fn is_in_certificate_valid_timerange(certificate: &X509Certificate, signing_date_time: &DateTime<FixedOffset>) -> bool {
     let certificate_validity_start_date_time =
         DateTime::parse_from_rfc2822(certificate.validity().not_before.to_rfc2822().as_str()).unwrap();
 
     let certificate_validity_end_date_time =
         DateTime::parse_from_rfc2822(certificate.validity().not_after.to_rfc2822().as_str()).unwrap();
 
-    if certificate_validity_start_date_time > signing_date_time
-        && signing_date_time > certificate_validity_end_date_time {
-        bail!("Signature date is too old or too new");
-    }
-    //certificate.verify_signature(Some(&certificate.tbs_certificate.subject_pki)).context("Certificate Verification failed")
-    verify_signature(&certificate, certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
-}
-
-pub(crate) fn check_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Pin<Box<dyn '_ + Future<Output = Result<()>>>> {
-    Box::pin(async move {
-        let certificate_validity_start_date_time =
-            DateTime::parse_from_rfc2822(certificate.validity().not_before.to_rfc2822().as_str()).unwrap();
-
-        let certificate_validity_end_date_time =
-            DateTime::parse_from_rfc2822(certificate.validity().not_after.to_rfc2822().as_str()).unwrap();
-
-        if certificate_validity_start_date_time > signing_date_time
-            && signing_date_time > certificate_validity_end_date_time {
-            bail!("Signature date is too old or too new");
-        }
-
-
-        // Certificate Authority Information Access
-
-        let authority_info_access_uri_result = get_authority_info_access_uri(&certificate);
-
-        match authority_info_access_uri_result {
-            Ok(parent_certificate_url) => {
-                let parent_certificate_vec = fetch_vec_u8_from_url(parent_certificate_url).await
-                    .context(format!("Parent certificate from {} couldn't be loaded", parent_certificate_url))?;
-
-                let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).expect("Parent certificate couldn't be parsed");
-
-                match verify_signature(&certificate, parent_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref()) {
-                    Ok(_) => check_certificate(parent_certificate, signing_date_time).await,
-                    Err(_) => bail!("Certificate Signature is Invalid")
-                }
-            },
-            Err(_) => {
-                let root_certificate_url = get_root_cert_url(&certificate);
-                let root_certificate_vec = fetch_vec_u8_from_url(root_certificate_url.as_str()).await
-                    .context(format!("root certificate from {} couldn't be loaded", root_certificate_url))?;
-
-                let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).expect("Root certificate couldn't be parsed");
-
-                verify_signature(&certificate, root_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
-                    .and_then(|_| check_root_certificate(root_certificate, signing_date_time))
-            }
-        }
-    })
+    certificate_validity_start_date_time > signing_date_time
+        && signing_date_time > certificate_validity_end_date_time
 }
 
 fn get_root_cert_url(certificate: &X509Certificate) -> String {
@@ -88,7 +86,6 @@ fn get_root_cert_url(certificate: &X509Certificate) -> String {
             .next().expect("missing common name")
             .attr_value.content.as_str().expect("missing common name");
 
-    log(issuer_common_name.clone().to_string());
     format!("./certs/{}.crt", issuer_common_name)
 }
 
@@ -114,7 +111,6 @@ fn verify_signature(
 ) -> Result<()> {
     use ring::signature;
     let signature_alg = &certificate.signature_algorithm.algorithm;
-    log(signature_alg.to_string());
     //certificate.verify_signature()
 
     if *signature_alg == OID_PKCS1_SHA1WITHRSA {
@@ -186,12 +182,10 @@ async fn fetch_vec_u8_from_url(url: &str) -> Result<Vec<u8>> {
             absoute_url = url.to_string();
         }
 
-        log(format!("fetching {}", absoute_url).to_string());
         let response = reqwest::get(&absoute_url).await.context(format!("{} couldn't be fetched", absoute_url))?;
 
         let response_bytes = response.bytes().await?.to_vec();
 
-        log(format!("fetched {}", hex::encode(response_bytes.clone()).as_str()).to_string());
         Ok(response_bytes)
     } else {
         bail!("Cant fetch from empty ulr")
