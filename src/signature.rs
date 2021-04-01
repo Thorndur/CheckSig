@@ -29,8 +29,6 @@ pub(crate) fn get_signature_parts_from_js_value(js_value: JsValue) -> SignatureP
 
 pub(crate) async fn check_signature(signature_parts: SignatureParts, message: &[u8], signing_date_time: DateTime<FixedOffset>) -> Result<()> {
 
-    let mut context = ring::digest::Context::new(&SHA256);
-    message.chunks(1024).for_each( |chunk| context.update(chunk));
 
     if compare_with_message_hash(message, signature_parts.message_hash_buffer.as_slice()) {
         let singed_hash = Signature::from_asn1(signature_parts.signature_buffer.as_slice()).expect("Signature couldn't be parsed");

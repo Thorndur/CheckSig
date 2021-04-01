@@ -1,6 +1,6 @@
 use std::str;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, Error};
 
 use wasm_bindgen::__rt::core::pin::Pin;
 use wasm_bindgen::__rt::core::future::Future;
@@ -20,7 +20,8 @@ use der_parser::oid;
 use oid_registry::*;
 use web_sys::window;
 use chrono::{DateTime, FixedOffset};
-
+use der_parser::oid::Oid;
+use crate::crypography::verify_signed_message;
 
 fn check_root_certificate(certificate: X509Certificate, signing_date_time: DateTime<FixedOffset>) -> Result<()> {
     if !is_in_certificate_valid_timerange(&certificate, &signing_date_time) {
@@ -109,61 +110,14 @@ fn verify_signature(
     certificate: &X509Certificate,
     parent_public_key: &[u8]
 ) -> Result<()> {
-    use ring::signature;
     let signature_alg = &certificate.signature_algorithm.algorithm;
     //certificate.verify_signature()
 
-    if *signature_alg == OID_PKCS1_SHA1WITHRSA {
+    let public_key = parent_public_key.as_ref();
+    let message = certificate.tbs_certificate.as_ref();
+    let signature = certificate.signature_value.as_ref();
 
-        return signature::RSA_PKCS1_1024_8192_SHA1_FOR_LEGACY_USE_ONLY.verify(
-            untrusted::Input::from(parent_public_key.as_ref()),
-            untrusted::Input::from(certificate.tbs_certificate.as_ref()),
-            untrusted::Input::from(certificate.signature_value.as_ref()),
-        ).context("Certificate Verification failed");
-
-    } else if *signature_alg == OID_PKCS1_SHA256WITHRSA {
-
-        return signature::RSA_PKCS1_2048_8192_SHA256.verify(
-            untrusted::Input::from(parent_public_key.as_ref()),
-            untrusted::Input::from(certificate.tbs_certificate.as_ref()),
-            untrusted::Input::from(certificate.signature_value.as_ref()),
-        ).context("Certificate Verification failed");
-
-    } else if *signature_alg == OID_PKCS1_SHA384WITHRSA {
-
-        return signature::RSA_PKCS1_2048_8192_SHA384.verify(
-            untrusted::Input::from(parent_public_key.as_ref()),
-            untrusted::Input::from(certificate.tbs_certificate.as_ref()),
-            untrusted::Input::from(certificate.signature_value.as_ref()),
-        ).context("Certificate Verification failed");
-
-    } else if *signature_alg == OID_PKCS1_SHA512WITHRSA {
-
-        return signature::RSA_PKCS1_2048_8192_SHA512.verify(
-            untrusted::Input::from(parent_public_key.as_ref()),
-            untrusted::Input::from(certificate.tbs_certificate.as_ref()),
-            untrusted::Input::from(certificate.signature_value.as_ref()),
-        ).context("Certificate Verification failed");
-
-    } else if *signature_alg == OID_SIG_ECDSA_WITH_SHA256 {
-
-        let signature = Signature::from_asn1(&certificate.signature_value.as_ref())
-            .expect("Certificate signature couldn't be parsed");
-
-        let public_key = VerifyingKey::from_sec1_bytes(parent_public_key.as_ref())
-            .expect("Parent certificate public key couldn't be parsed");
-
-
-        let result = match public_key.verify(certificate.tbs_certificate.as_ref(), &signature){
-            Ok(_) => Ok(()),
-            Err(_) => bail!("Certificate Verification failed")
-        };
-        return result;
-
-    } else {
-        bail!("Unsupported Signature Algorithm");
-    };
-
+    verify_signed_message(signature_alg, public_key, message, signature)
 }
 
 async fn fetch_vec_u8_from_url(url: &str) -> Result<Vec<u8>> {

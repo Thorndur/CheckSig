@@ -10,6 +10,7 @@ use crate::pdf::extract_pdf_data;
 mod certificate;
 mod pdf;
 mod signature;
+mod crypography;
 
 
 // When the `wee_alloc` feature is enabled, this uses `wee_alloc` as the global
