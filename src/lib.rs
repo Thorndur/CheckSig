@@ -51,7 +51,9 @@ pub async fn check_document(array_buffer: Vec<u8>) -> Result<(), JsValue> {
             let (signature, message, signing_date_time) = result;
 
             let signature_parts = get_signature_parts_from_js_value(getSignatureParts(signature));
-            check_signature(signature_parts, message.as_slice(), signing_date_time).await.map_err(|error| JsValue::from_str(error.to_string().as_str()))
+
+            check_signature(signature_parts, message.as_slice(), signing_date_time).await
+                .map_err(|error| JsValue::from_str(error.to_string().as_str()))
         }
         Err(error) => Err(JsValue::from_str(error.to_string().as_str()))
     }
