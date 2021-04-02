@@ -1,17 +1,16 @@
 use std::str;
 
 use anyhow::Result;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::*;
 
-use crate::signature::{check_signature, get_signature_parts_from_js_value};
 use crate::pdf::extract_pdf_data;
+use crate::signature::{check_signature, get_signature_parts_from_js_value};
 
 mod certificate;
+mod cryptography;
 mod pdf;
 mod signature;
-mod crypography;
-
 
 // When the `wee_alloc` feature is enabled, this uses `wee_alloc` as the global
 // allocator.
@@ -31,7 +30,7 @@ extern "C" {
 
 #[wasm_bindgen(module = "/js/signature.js")]
 extern "C" {
-   fn getSignatureParts(signatureArray: Vec<u8>) -> JsValue;
+    fn getSignatureParts(signatureArray: Vec<u8>) -> JsValue;
 }
 
 // This is like the `main` function, except for JavaScript.
@@ -46,21 +45,22 @@ pub fn main_js() -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub async fn check_document(array_buffer: Vec<u8>) -> Result<(), JsValue> {
-
     match extract_pdf_data(array_buffer) {
         Ok(result) => {
             let (signature, message, signing_date_time) = result;
 
-            let signature_parts =
-                map_to_js_result(get_signature_parts_from_js_value(getSignatureParts(signature)))?;
+            let signature_parts = map_to_js_result(get_signature_parts_from_js_value(
+                getSignatureParts(signature),
+            ))?;
 
             map_to_js_result(
-                check_signature(signature_parts, message.as_slice(), signing_date_time).await)
+                check_signature(signature_parts, message.as_slice(), signing_date_time).await,
+            )
         }
-        Err(error) => map_to_js_result(Err(error))
+        Err(error) => map_to_js_result(Err(error)),
     }
 }
 
-fn map_to_js_result<T>(result: Result<T>) -> Result<T, JsValue>  {
-    result.map_err(|error|JsValue::from_str(error.to_string().as_str()))
+fn map_to_js_result<T>(result: Result<T>) -> Result<T, JsValue> {
+    result.map_err(|error| JsValue::from_str(error.to_string().as_str()))
 }
