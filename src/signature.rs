@@ -1,14 +1,12 @@
 use wasm_bindgen::JsValue;
 use x509_parser::parse_x509_certificate;
-use anyhow::{Result, bail};
-
+use anyhow::{Result, bail, Context};
 use serde::{Serialize, Deserialize};
 
-use ring::digest::SHA256;
 use crate::certificate::check_certificate;
 use chrono::{DateTime, FixedOffset};
 use der_parser::oid::Oid;
-use crate::crypography::verify_signed_message;
+use crate::crypography::{verify_signed_message, compare_with_message_hash};
 
 
 #[derive(Serialize, Deserialize)]
@@ -21,33 +19,31 @@ pub struct SignatureParts {
     pub certificates_buffer: Vec<Vec<u8>>
 }
 
-pub(crate) fn get_signature_parts_from_js_value(js_value: JsValue) -> SignatureParts {
-    serde_wasm_bindgen::from_value(js_value).expect("Signature parts couldn't be parsed")
+pub(crate) fn get_signature_parts_from_js_value(js_value: JsValue) -> Result<SignatureParts> {
+    match serde_wasm_bindgen::from_value(js_value) {
+        Ok(signature_parts) => Ok(signature_parts),
+        Err(_) => bail!("Signature parts couldn't be parsed")
+    }
 }
 
 pub(crate) async fn check_signature(signature_parts: SignatureParts, message: &[u8], signing_date_time: DateTime<FixedOffset>) -> Result<()> {
-    if compare_with_message_hash(message, signature_parts.message_hash_buffer.as_slice()) {
-        let (_, cert) = parse_x509_certificate(signature_parts.certificates_buffer[0].as_slice()).expect("Certificate couldn't be parsed");
+    let hash_algorithm_id = get_oid_form_id_string(signature_parts.hash_algorithm_id)?;
 
-        let oid = get_oid_form_id_string(signature_parts.signature_algorithm_id)?;
+    if compare_with_message_hash(&hash_algorithm_id, message, signature_parts.message_hash_buffer.as_slice()) {
+        let (_, cert) = parse_x509_certificate(signature_parts.certificates_buffer[0].as_slice()).context("Certificate couldn't be parsed")?;
+
+        let signature_algorithm_id = get_oid_form_id_string(signature_parts.signature_algorithm_id)?;
         let public_key = cert.tbs_certificate.subject_pki.subject_public_key.data;
         let message = signature_parts.signed_attributes_buffer.as_slice();
         let signature = signature_parts.signature_buffer.as_slice();
 
-        match verify_signed_message(&oid, public_key, message, signature) {
+        match verify_signed_message(&signature_algorithm_id, public_key, message, signature) {
             Ok(_) => check_certificate(cert, signing_date_time).await,
             Err(_) => bail!("Signature Couldn't be Verified")
         }
     } else {
         bail!("Message Hash in Signature is wrong")
     }
-}
-
-fn compare_with_message_hash(message: &[u8], hash: &[u8]) -> bool {
-    let mut context = ring::digest::Context::new(&SHA256);
-    message.chunks(1024).for_each( |chunk| context.update(chunk));
-
-    hash.eq(context.finish().as_ref())
 }
 
 fn get_oid_form_id_string(id: String) -> Result<Oid<'static>> {

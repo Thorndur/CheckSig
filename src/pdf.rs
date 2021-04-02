@@ -61,7 +61,7 @@ pub fn extract_pdf_data(document: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, DateTime
     let parsing_date = date.replace("'", "");
 
     let datetime = DateTime::parse_from_str(parsing_date.as_str(), "%Y%m%d%H%M%S%z")
-        .expect("Signing date couldn't be parsed");
+        .context("Signing date couldn't be parsed")?;
 
     let signature = hex::decode(
         String::from_utf8_lossy(

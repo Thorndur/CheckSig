@@ -1,6 +1,6 @@
 use std::str;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, anyhow};
 
 use wasm_bindgen::__rt::core::pin::Pin;
 use wasm_bindgen::__rt::core::future::Future;
@@ -39,7 +39,7 @@ pub(crate) fn check_certificate(certificate: X509Certificate, signing_date_time:
                     let parent_certificate_vec = fetch_vec_u8_from_url(parent_certificate_url).await
                         .context(format!("Parent certificate from {} couldn't be loaded", parent_certificate_url))?;
 
-                    let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).expect("Parent certificate couldn't be parsed");
+                    let (_, parent_certificate) = parse_x509_certificate(parent_certificate_vec.as_slice()).context("Parent certificate couldn't be parsed")?;
 
                     match verify_signature(&certificate, parent_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref()) {
                         Ok(_) => check_certificate(parent_certificate, signing_date_time).await,
@@ -47,11 +47,11 @@ pub(crate) fn check_certificate(certificate: X509Certificate, signing_date_time:
                     }
                 },
                 Err(_) => {
-                    let root_certificate_url = get_root_cert_url(&certificate);
+                    let root_certificate_url = get_root_cert_url(&certificate)?;
                     let root_certificate_vec = fetch_vec_u8_from_url(root_certificate_url.as_str()).await
                         .context(format!("root certificate from {} couldn't be loaded", root_certificate_url))?;
 
-                    let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).expect("Root certificate couldn't be parsed");
+                    let (_, root_certificate) = parse_x509_certificate(root_certificate_vec.as_slice()).context("Root certificate couldn't be parsed")?;
 
                     verify_signature(&certificate, root_certificate.tbs_certificate.subject_pki.subject_public_key.as_ref())
                         .and_then(|_| check_root_certificate(root_certificate, signing_date_time))
@@ -72,14 +72,14 @@ fn is_in_certificate_valid_timerange(certificate: &X509Certificate, signing_date
         && *signing_date_time < certificate_validity_end_date_time
 }
 
-fn get_root_cert_url(certificate: &X509Certificate) -> String {
+fn get_root_cert_url(certificate: &X509Certificate) -> Result<String> {
     let issuer_common_name =
         certificate.tbs_certificate.issuer
             .iter_common_name()
-            .next().expect("missing common name")
-            .attr_value.content.as_str().expect("missing common name");
+            .next().context("missing common name")?
+            .attr_value.content.as_str().context("missing common name")?;
 
-    format!("./certs/{}.crt", issuer_common_name)
+    Ok(format!("./certs/{}.crt", issuer_common_name))
 }
 
 fn get_authority_info_access_uri<'a>(certificate: &'a X509Certificate) -> Result<&'a str> {
@@ -119,9 +119,9 @@ async fn fetch_vec_u8_from_url(url: &str) -> Result<Vec<u8>> {
 
         if url.chars().next().unwrap() == '.' {
             let location_origin = window()
-                .expect("Origin Url couldn't be detected").
-                location().origin()
-                .expect("Origin Url couldn't be detected");
+                .context("Origin Url couldn't be detected")?
+                .location().origin()
+                .map_err(|_| anyhow!("Origin Url couldn't be detected"))?;
 
             absoute_url = format!("{}{}", location_origin, url[1..].to_string());
         } else {

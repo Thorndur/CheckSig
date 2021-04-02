@@ -7,10 +7,8 @@ import("../pkg").then(module => {
         var fileData = new Blob([event.target.files[0]]);
         fileData.arrayBuffer().then(function (result) {
             module.check_document(new Uint8Array(result))
-                .then(output.innerText = "signature is valid")
-                .catch(error => {
-                    output.innerText = "Error: " + error
-                });
+                .then(() => output.innerText = "signature is valid")
+                .catch((error) => output.innerText = "Error: " + error);
         });
     });
 })
