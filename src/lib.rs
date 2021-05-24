@@ -49,6 +49,8 @@ pub async fn check_document(array_buffer: Vec<u8>) -> Result<(), JsValue> {
         Ok(result) => {
             let (signature, message, signing_date_time) = result;
 
+            log(hex::encode(signature.as_slice()));
+
             let signature_parts = map_to_js_result(get_signature_parts_from_js_value(
                 getSignatureParts(signature),
             ))?;

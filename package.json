@@ -5,7 +5,8 @@
   "scripts": {
     "build": "rimraf dist pkg && webpack --features=wasm32_c",
     "start": "rimraf dist pkg && webpack-dev-server --open -d  --features=wasm32_c",
-    "test": "cargo test && wasm-pack test --firefox --chrome"
+    "test": "cargo test && wasm-pack test --firefox --chrome",
+    "pack": "wasm-pack pack"
   },
   "devDependencies": {
     "@wasm-tool/wasm-pack-plugin": "^1.3.3",

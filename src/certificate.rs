@@ -1,16 +1,20 @@
+use std::collections::HashSet;
+use std::iter::FromIterator;
 use std::str;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use chrono::{DateTime, FixedOffset};
+use der_parser::num_bigint::BigUint;
 use der_parser::oid;
 use wasm_bindgen::__rt::core::future::Future;
 use wasm_bindgen::__rt::core::pin::Pin;
 use web_sys::window;
+use x509_parser::{parse_x509_certificate, parse_x509_crl};
 use x509_parser::certificate::X509Certificate;
 use x509_parser::extensions::{GeneralName, ParsedExtension};
-use x509_parser::parse_x509_certificate;
 
 use crate::cryptography::verify_signed_message;
+use crate::log;
 
 fn check_root_certificate(
     certificate: X509Certificate,
@@ -19,7 +23,7 @@ fn check_root_certificate(
     if !is_in_certificate_valid_timerange(&certificate, &signing_date_time) {
         bail!("Signature date is too old or too new for Root Certificate Validity Timerange");
     } else {
-        verify_signature(
+        verify_certificate_signature(
             &certificate,
             certificate
                 .tbs_certificate
@@ -55,7 +59,7 @@ pub(crate) fn check_certificate(
                         parse_x509_certificate(parent_certificate_vec.as_slice())
                             .context("Parent certificate couldn't be parsed")?;
 
-                    match verify_signature(
+                    match verify_certificate_signature(
                         &certificate,
                         parent_certificate
                             .tbs_certificate
@@ -63,12 +67,20 @@ pub(crate) fn check_certificate(
                             .subject_public_key
                             .as_ref(),
                     ) {
-                        Ok(_) => check_certificate(parent_certificate, signing_date_time).await,
+                        Ok(_) => {
+                            check_certificate(parent_certificate, signing_date_time).await
+                            //  match check_crl(&certificate).await {
+                            //      Ok(_) => check_certificate(parent_certificate, signing_date_time).await,
+                            //      Err(error) => bail!("Certificate not valid: {}", error.to_string())
+                            //  }
+                        },
                         Err(_) => bail!("Certificate Signature is Invalid"),
                     }
                 }
                 Err(_) => {
                     let root_certificate_url = get_root_cert_url(&certificate)?;
+
+
                     let root_certificate_vec = fetch_vec_u8_from_url(root_certificate_url.as_str())
                         .await
                         .context(format!(
@@ -80,19 +92,44 @@ pub(crate) fn check_certificate(
                         parse_x509_certificate(root_certificate_vec.as_slice())
                             .context("Root certificate couldn't be parsed")?;
 
-                    verify_signature(
+                    match verify_certificate_signature(
                         &certificate,
                         root_certificate
                             .tbs_certificate
                             .subject_pki
                             .subject_public_key
                             .as_ref(),
-                    )
-                        .and_then(|_| check_root_certificate(root_certificate, signing_date_time))
+                    ) {
+                        Ok(_) => {
+                            check_root_certificate(root_certificate, signing_date_time)
+                            // match check_crl(&certificate).await {
+                            //     Ok(_) => check_root_certificate(root_certificate, signing_date_time),
+                            //     Err(error) => bail!("Certificate not valid: {}", error.to_string())
+                            // }
+                        }
+                        Err(error) => bail!("Certificate not valid: {}", error.to_string())
+                    }
+                    //    .and_then(|_| check_root_certificate(root_certificate, signing_date_time))
                 }
             }
         }
     })
+}
+
+async fn check_crl<'a>(certificate: &X509Certificate<'a>) -> Result<()> {
+    let crl_uri = get_crl_uri(&certificate)?;
+
+
+    log(crl_uri.to_string());
+    let certificate_revocation_list_byte_array = fetch_vec_u8_from_url(crl_uri).await?;
+    let (_, certificate_revocation_list) = parse_x509_crl(certificate_revocation_list_byte_array.as_slice())?;
+    let revokedCerts: HashSet<BigUint> = certificate_revocation_list.iter_revoked_certificates().map(|revoked| revoked.user_certificate.clone()).collect();
+
+    if revokedCerts.contains(&certificate.tbs_certificate.serial) { //&& revoked.revocation_date < signing_date)
+        bail!("Certificate is Revoked")
+    } else {
+        Ok(())
+    }
 }
 
 fn is_in_certificate_valid_timerange(
@@ -127,11 +164,7 @@ fn get_root_cert_url(certificate: &X509Certificate) -> Result<String> {
 }
 
 fn get_authority_info_access_uri<'a>(certificate: &'a X509Certificate) -> Result<&'a str> {
-    return match certificate
-        .tbs_certificate
-        .extensions()
-        .get(&oid!(1.3.6 .1 .5 .5 .7 .1 .1))
-    {
+    match certificate.tbs_certificate.extensions().get(&oid!(1.3.6 .1 .5 .5 .7 .1 .1)) {
         Some(parsed_extension) => {
             if let ParsedExtension::AuthorityInfoAccess(authority_info_access) =
             parsed_extension.parsed_extension()
@@ -151,11 +184,23 @@ fn get_authority_info_access_uri<'a>(certificate: &'a X509Certificate) -> Result
                 bail!("Certificate Authority Information Access is invalid")
             }
         }
-        None => bail!("Missing Certificate extension: Certificate Authority Information Acces"),
-    };
+        None => bail!("Missing Certificate extension: Certificate Authority Information Access"),
+    }
 }
 
-fn verify_signature(certificate: &X509Certificate, parent_public_key: &[u8]) -> Result<()> {
+fn get_crl_uri<'a>(certificate: &'a X509Certificate) -> Result<&'a str> {
+    match certificate.tbs_certificate.extensions.get(&oid!(2.5.29.31)) {
+        Some(parsed_extension) => {
+            let url_byte_slice = &parsed_extension.value[10..parsed_extension.value.len()];
+            let url = str::from_utf8(url_byte_slice).unwrap();
+            Ok(url)
+        }
+        None => { bail!("Missing Certificate extension: CRL Distribution Points"); }
+    }
+}
+
+
+fn verify_certificate_signature(certificate: &X509Certificate, parent_public_key: &[u8]) -> Result<()> {
     let signature_alg = &certificate.signature_algorithm.algorithm;
     //certificate.verify_signature()
 
@@ -163,7 +208,7 @@ fn verify_signature(certificate: &X509Certificate, parent_public_key: &[u8]) -> 
     let message = certificate.tbs_certificate.as_ref();
     let signature = certificate.signature_value.as_ref();
 
-    verify_signed_message(signature_alg, public_key, message, signature)
+    verify_signed_message(signature_alg, public_key, message, signature).map_err(|error| anyhow!("Signature Couldn't be Verified: {}", error.to_string()))
 }
 
 async fn fetch_vec_u8_from_url(url: &str) -> Result<Vec<u8>> {

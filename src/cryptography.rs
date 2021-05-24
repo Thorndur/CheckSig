@@ -21,7 +21,7 @@ pub(crate) fn verify_signed_message(
                 untrusted::Input::from(message),
                 untrusted::Input::from(signature),
             )
-            .context("Certificate Verification failed")
+            .context("Message Verification failed")
     } else if *signature_alg == OID_PKCS1_SHA256WITHRSA {
         signature::RSA_PKCS1_2048_8192_SHA256
             .verify(
@@ -29,7 +29,7 @@ pub(crate) fn verify_signed_message(
                 untrusted::Input::from(message),
                 untrusted::Input::from(signature),
             )
-            .context("Certificate Verification failed")
+            .context("Message Verification failed")
     } else if *signature_alg == OID_PKCS1_SHA384WITHRSA {
         signature::RSA_PKCS1_2048_8192_SHA384
             .verify(
@@ -37,7 +37,7 @@ pub(crate) fn verify_signed_message(
                 untrusted::Input::from(message),
                 untrusted::Input::from(signature),
             )
-            .context("Certificate Verification failed")
+            .context("Message Verification failed")
     } else if *signature_alg == OID_PKCS1_SHA512WITHRSA {
         signature::RSA_PKCS1_2048_8192_SHA512
             .verify(
@@ -45,17 +45,17 @@ pub(crate) fn verify_signed_message(
                 untrusted::Input::from(message),
                 untrusted::Input::from(signature),
             )
-            .context("Certificate Verification failed")
+            .context("Message Verification failed")
     } else if *signature_alg == OID_SIG_ECDSA_WITH_SHA256 {
         let signature =
-            Signature::from_asn1(signature).context("Certificate signature couldn't be parsed")?;
+            Signature::from_asn1(signature).context("message signature couldn't be parsed")?;
 
         let public_key = VerifyingKey::from_sec1_bytes(public_key)
-            .context("Parent certificate public key couldn't be parsed")?;
+            .context("message public key couldn't be parsed")?;
 
         match public_key.verify(message, &signature) {
             Ok(_) => Ok(()),
-            Err(_) => bail!("Certificate Verification failed"),
+            Err(_) => bail!("message Verification failed"),
         }
     } else {
         bail!("Unsupported Signature Algorithm");

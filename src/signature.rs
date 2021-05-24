@@ -51,7 +51,7 @@ pub(crate) async fn check_signature(
 
         match verify_signed_message(&signature_algorithm_id, public_key, message, signature) {
             Ok(_) => check_certificate(cert, signing_date_time).await,
-            Err(_) => bail!("Signature Couldn't be Verified"),
+            Err(e) => bail!("Signature Couldn't be Verified:  {}", e.to_string()),
         }
     } else {
         bail!("Message Hash in Signature is wrong")

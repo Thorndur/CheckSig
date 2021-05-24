@@ -1,4 +1,4 @@
-## Needed Programs
+## Needed Software
 Npm, Cargo, clang 3.5 or above, llvm
 
 ## How to install
@@ -21,7 +21,7 @@ npm start
 npm run build
 ```
 
-## Environment Variables
+## Environmental Variables
 
 TARGET_CC=clang;TARGET_AR=llvm-ar
 
